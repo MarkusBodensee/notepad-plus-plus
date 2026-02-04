@@ -1000,11 +1000,11 @@ Translation note:
 					<Item id="6108" name="Tabs nicht mit der Maus verschiebbar"/>
 					<Item id="6109" name="Farbe inaktiver Tabs ändern"/>
 					<Item id="6110" name="Aktiven Tab farbig hervorheben"/>
-					<Item id="6111" name="Schaltfläche auf inaktiven Tabs anzeigen"/>
+					<Item id="6111" name="Schaltflächen auf inaktiven Tabs anzeigen"/>
 					<Item id="6112" name="Schließen-Kreuz anzeigen"/>
 					<Item id="6113" name="Tabs per Doppelklick schließen"/>
 					<Item id="6115" name="Pin-Tab-Funktion aktivieren (anheften/loslösen)"/>
-					<Item id="6135" name="Nur angeheftete Schaltfläche anzeigen"/>
+					<Item id="6135" name="Nur angeheftete Pins anzeigen"/>
 					<Item id="6118" name="Ausblenden"/>
 					<Item id="6119" name="Mehrzeilig"/>
 					<Item id="6120" name="Vertikal"/>
