@@ -319,7 +319,7 @@ int VerticalFileSwitcherListView::closeItem(BufferID bufferID, int iView)
 void VerticalFileSwitcherListView::activateItem(BufferID bufferID, int iView)
 {
 	// Suppress redraws while we're resetting states
-	::SendMessage(_hSelf, WM_SETREDRAW, false, 0);
+	//::SendMessage(_hSelf, WM_SETREDRAW, false, 0);
 
 	// Clean all selection
 	int nbItem = ListView_GetItemCount(_hSelf);
@@ -329,9 +329,9 @@ void VerticalFileSwitcherListView::activateItem(BufferID bufferID, int iView)
 	_currentIndex = newItem(bufferID, iView);
 	selectCurrentItem();
 	// Have to enable redraw to be able to move selection to the current item
-	::SendMessage(_hSelf, WM_SETREDRAW, true, 0);
+	//::SendMessage(_hSelf, WM_SETREDRAW, true, 0);
 	ensureVisibleCurrentItem();
-	redrawItems();
+	//redrawItems();
 }
 
 int VerticalFileSwitcherListView::add(BufferID bufferID, int iView)
