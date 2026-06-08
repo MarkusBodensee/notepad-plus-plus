@@ -1,5 +1,5 @@
 // This file is part of Notepad++ project
-// Copyright (C)2025 Don HO <don.h@free.fr>
+// Copyright (C)2026 Don HO <don.h@free.fr>
 
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -19,14 +19,14 @@
 
 //************ Notepad++ version **************************
 
-#define NOTEPAD_PLUS_VERSION L"Notepad++ v8.9.3"
+#define NOTEPAD_PLUS_VERSION L"Notepad++ v8.9.6.4"
 
 // should be X.Y : ie. if VERSION_DIGITALVALUE == 4, 7, 1, 0 , then X = 4, Y = 71
 // ex : #define VERSION_VALUE L"5.63\0"
-#define VERSION_INTERNAL_VALUE L"8.93\0"
+#define VERSION_INTERNAL_VALUE L"8.964\0"
 
-#define VERSION_PRODUCT_VALUE L"8.9.3\0"
-#define VERSION_DIGITALVALUE 8, 9, 3, 0
+#define VERSION_PRODUCT_VALUE L"8.9.6.4\0"
+#define VERSION_DIGITALVALUE 8, 9, 6, 4
 
 //**********************************************************
 
@@ -716,7 +716,7 @@
 	#define NPPM_INTERNAL_CLEANSMARTHILITING            (NOTEPADPLUS_USER_INTERNAL + 68)
 	#define NPPM_INTERNAL_CLEANBRACEMATCH               (NOTEPADPLUS_USER_INTERNAL + 69)
 	#define NPPM_INTERNAL_WINDOWSSESSIONEXIT            (NOTEPADPLUS_USER_INTERNAL + 70)
-	#define NPPM_INTERNAL_RESTOREFROMTRAY               (NOTEPADPLUS_USER_INTERNAL + 71)
+	#define NPPM_INTERNAL_RESTOREFROMMINIMIZED          (NOTEPADPLUS_USER_INTERNAL + 71)
 	#define NPPM_INTERNAL_SETNPC                        (NOTEPADPLUS_USER_INTERNAL + 72)
 	#define NPPM_INTERNAL_NPCFORMCHANGED                (NOTEPADPLUS_USER_INTERNAL + 73)
 	#define NPPM_INTERNAL_NPCLAUNCHSTYLECONF            (NOTEPADPLUS_USER_INTERNAL + 74)

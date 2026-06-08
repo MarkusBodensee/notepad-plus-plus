@@ -730,7 +730,16 @@ LRESULT Notepad_plus::process(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
 			{
 				case COPYDATA_FULL_CMDLINE:
 				{
-					nppParam.setCmdLineString(static_cast<wchar_t*>(pCopyData->lpData));
+					try {
+						wchar_t* str2set = static_cast<wchar_t*>(pCopyData->lpData);
+						nppParam.setCmdLineString(str2set);
+					}
+					catch (...)
+					{
+#if !defined(NDEBUG)
+						printStr(L"COPYDATA_FULL_CMDLINE: invalid string pointer.");
+#endif
+					}
 					break;
 				}
 
@@ -754,7 +763,7 @@ LRESULT Notepad_plus::process(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
 					else
 					{
 #if !defined(NDEBUG)  
-						printStr(L"sizeof(CmdLineParams) != cmdLineParamsSize\rCmdLineParams is formed by an instance of another version,\rwhereas your CmdLineParams has been modified in this instance.");
+						printStr(L"COPYDATA_PARAMS: sizeof(CmdLineParams) != cmdLineParamsSize\rCmdLineParams is formed by an instance of another version,\rwhereas your CmdLineParams has been modified in this instance.");
 #endif
 					}
 
@@ -765,9 +774,17 @@ LRESULT Notepad_plus::process(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
 
 				case COPYDATA_FILENAMESW:
 				{
-					wchar_t *fileNamesW = static_cast<wchar_t *>(pCopyData->lpData);
-					const CmdLineParamsDTO & cmdLineParams = nppParam.getCmdLineParams();
-					loadCommandlineParams(fileNamesW, &cmdLineParams);
+					try {
+						wchar_t* fileNamesW = static_cast<wchar_t*>(pCopyData->lpData);
+						const CmdLineParamsDTO& cmdLineParams = nppParam.getCmdLineParams();
+						loadCommandlineParams(fileNamesW, &cmdLineParams);
+					}
+					catch (...)
+					{
+#if !defined(NDEBUG)
+						printStr(L"COPYDATA_FILENAMESW: invalid string pointer.");
+#endif
+					}
 					break;
 				}
 			}
@@ -2735,10 +2752,17 @@ LRESULT Notepad_plus::process(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
 				scnN.nmhdr.code = NPPN_SHUTDOWN;
 				_pluginsManager.notify(&scnN);
 
-				saveScintillasZoom(); 
+				saveScintillasZoom();
+
+				//
+				// saving shortcuts.xml: it should be done before "saveGUIParams" for recalculeting its HMAC to save in config.xml
+				//
+				saveShortcuts();
+
 				saveGUIParams(); //writeGUIParams writeScintillaParams
 				saveFindHistory(); //writeFindHistory
 				_lastRecentFileList.saveLRFL(); //writeRecentFileHistorySettings, writeHistory
+
 				//
 				// saving config.xml
 				//
@@ -2748,11 +2772,6 @@ LRESULT Notepad_plus::process(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
 				// saving userDefineLang.xml
 				//
 				saveUserDefineLangs();
-
-				//
-				// saving shortcuts.xml
-				//
-				saveShortcuts();
 
 				if (!_isNppSessionSavedAtExit)
 				{
@@ -2815,7 +2834,7 @@ LRESULT Notepad_plus::process(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
 			return TRUE;
 		}
 
-		case NPPM_INTERNAL_RESTOREFROMTRAY:
+		case NPPM_INTERNAL_RESTOREFROMMINIMIZED:
 		{
 			// When mono instance, bring this one to front
 			if (_pTrayIco != nullptr && _pTrayIco->isInTray())
@@ -2823,6 +2842,11 @@ LRESULT Notepad_plus::process(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPa
 				// We are in tray, restore properly..
 				::SendMessage(hwnd, NPPM_INTERNAL_MINIMIZED_TRAY, 0, WM_LBUTTONUP);
 				return TRUE;
+			}
+			else
+			{
+				if (::IsIconic(hwnd))
+					::ShowWindow(hwnd, SW_RESTORE);
 			}
 			return FALSE;
 		}

@@ -21,6 +21,7 @@
 
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <strsafe.h>
 
 #include <algorithm>
 #include <array>
@@ -60,6 +61,7 @@
 #include "resource.h"
 #include "shortcut.h"
 #include "verifySignedfile.h"
+#include "hmac.h"
 
 #ifdef _MSC_VER
 #pragma warning(disable : 4996) // for GetVersionEx()
@@ -102,6 +104,7 @@ static constexpr WinMenuKeyDefinition winKeyDefs[]
 	{ VK_O,       IDM_FILE_OPEN,                                true,  false, false, nullptr },
 	{ VK_NULL,    IDM_FILE_OPEN_FOLDER,                         false, false, false, L"Open containing folder in Explorer" },
 	{ VK_NULL,    IDM_FILE_OPEN_CMD,                            false, false, false, L"Open containing folder in Command Prompt" },
+	{ VK_NULL,    IDM_FILE_OPEN_POWERSHELL,                     false, false, false, L"Open containing folder in PowerShell" },
 	{ VK_NULL,    IDM_FILE_OPEN_DEFAULT_VIEWER,                 false, false, false, nullptr },
 	{ VK_NULL,    IDM_FILE_OPENFOLDERASWORKSPACE,                false, false, false, nullptr },
 	{ VK_R,       IDM_FILE_RELOAD,                              true,  false, false, nullptr },
@@ -214,8 +217,8 @@ static constexpr WinMenuKeyDefinition winKeyDefs[]
 	{ VK_NULL,    IDM_EDIT_COPY_BINARY,                         false, false, false, nullptr },
 	{ VK_NULL,    IDM_EDIT_CUT_BINARY,                          false, false, false, nullptr },
 	{ VK_NULL,    IDM_EDIT_PASTE_BINARY,                        false, false, false, nullptr },
-	{ VK_NULL,    IDM_EDIT_OPENASFILE,                          false, false, false, nullptr },
-	{ VK_NULL,    IDM_EDIT_OPENINFOLDER,                        false, false, false, nullptr },
+	{ VK_NULL,    IDM_EDIT_OPENSELECTEDFILETOEDIT,              false, false, false, nullptr },
+	{ VK_NULL,    IDM_EDIT_OPENSELECTEDFILEFOLDERINEXPLORER,    false, false, false, nullptr },
 	{ VK_NULL,    IDM_EDIT_SEARCHONINTERNET,                    false, false, false, nullptr },
 	{ VK_NULL,    IDM_EDIT_CHANGESEARCHENGINE,                  false, false, false, nullptr },
 	{ VK_NULL,    IDM_EDIT_MULTISELECTALL,                      false, false, false, L"Multi-select All: Ignore Case and Whole Word" },
@@ -477,6 +480,7 @@ static constexpr WinMenuKeyDefinition winKeyDefs[]
 	{ VK_NULL,    IDM_MACRO_RUNMULTIMACRODLG,                   false, false, false, nullptr },
 
 	{ VK_F5,      IDM_EXECUTE,                                  false, false, false, nullptr },
+	{ VK_NULL,    IDM_EXECUTE_VALIDATE_SHORTCUTSXML,            false, false, false, nullptr },
 
 	{ VK_NULL,    IDM_WINDOW_WINDOWS,                           false, false, false, nullptr },
 	{ VK_NULL,    IDM_WINDOW_SORT_FN_ASC,                       false, false, false, L"Sort by Name A to Z" },
@@ -1567,7 +1571,7 @@ bool NppParameters::load()
 
 	_pXmlUserLangDoc._path = _userDefineLangPath;
 	_pXmlUserLangDoc._doc = new NppXml::NewDocument();
-	loadOkay = NppXml::loadFile(_pXmlUserLangDoc._doc, _userDefineLangPath.c_str());
+	loadOkay = NppXml::loadFileUDL(_pXmlUserLangDoc._doc, _userDefineLangPath.c_str());
 	if (!loadOkay)
 	{
 		delete _pXmlUserLangDoc._doc;
@@ -1584,7 +1588,7 @@ bool NppParameters::load()
 	for (const auto& i : udlFiles)
 	{
 		NppXml::Document udlDoc = new NppXml::NewDocument();
-		loadOkay = NppXml::loadFile(udlDoc, i.c_str());
+		loadOkay = NppXml::loadFileUDL(udlDoc, i.c_str());
 		if (!loadOkay)
 		{
 			delete udlDoc;
@@ -1670,6 +1674,27 @@ bool NppParameters::load()
 			::CopyFile(srcShortcutsPath.c_str(), _shortcutsPath.c_str(), TRUE);
 		else
 			generateXmlFromScratch(_shortcutsPath.c_str(), SHORTCUT_XML_CONTENT);
+
+		// Calculate the shortcuts.xml file HMAC to write it in config.xml for later integrity check
+
+		std::string fileContent = getFileContent(_shortcutsPath.c_str());
+
+		// Compute HMAC
+		std::string machineGUID = getMachineGUID();
+		_nppGUI._shortcutsOnDiskHmac = computeHMAC(machineGUID, fileContent);
+
+		// For the HMAC of new copied or generated shortcuts.xml, store it in config.xml without any condition
+		_nppGUI._shortcutsXmlHmacInConfig = _nppGUI._shortcutsOnDiskHmac;
+	}
+	else // shortcuts.xml already exists, keep tracking its HMAC for checking the integrity later
+	{
+		// Calculate the HMAC of shortcuts.xml on disk
+
+		std::string fileContent = getFileContent(_shortcutsPath.c_str());
+
+		// Compute HMAC
+		std::string machineGUID = getMachineGUID();
+		_nppGUI._shortcutsOnDiskHmac = computeHMAC(machineGUID, fileContent);
 	}
 
 	_pXmlShortcutDoc = new NppXml::NewDocument();
@@ -1892,7 +1917,7 @@ void NppParameters::removeTransparent(HWND hwnd)
 }
 
 
-void NppParameters::SetTransparent(HWND hwnd, int percent)
+void NppParameters::setTransparent(HWND hwnd, int percent)
 {
 	::SetWindowLongPtr(hwnd, GWL_EXSTYLE, ::GetWindowLongPtr(hwnd, GWL_EXSTYLE) | WS_EX_LAYERED);
 	if (percent > 255)
@@ -3165,20 +3190,28 @@ bool NppParameters::getSessionFromXmlTree(const NppXml::Document& pSessionDoc, S
 					std::wstring wstrLangName = langName ? string2wstring(langName) : L"";
 
 					const wchar_t* pBackupFilePath = wmc.char2wchar(NppXml::attribute(childNode, "backupFilePath"), CP_UTF8);
-					std::wstring currentBackupFilePath = NppParameters::getInstance().getUserPath() + L"\\backup\\";
+					wchar_t normalizedBackupFilePath[MAX_PATH]{};
+
 					if (pBackupFilePath)
 					{
-						std::wstring backupFilePath = pBackupFilePath;
+						::PathCanonicalize(normalizedBackupFilePath, pBackupFilePath);
+					}
+
+					std::wstring currentBackupFilePath = NppParameters::getInstance().getUserPath() + L"\\backup\\";
+
+					if (normalizedBackupFilePath[0])
+					{
+						std::wstring backupFilePath = normalizedBackupFilePath;
 						if (!backupFilePath.starts_with(currentBackupFilePath))
 						{
 							// reconstruct backupFilePath
-							wchar_t* fn = ::PathFindFileNameW(pBackupFilePath);
+							wchar_t* fn = ::PathFindFileNameW(normalizedBackupFilePath);
 							currentBackupFilePath += fn;
-							pBackupFilePath = currentBackupFilePath.c_str();
+							StringCchCopyW(normalizedBackupFilePath, MAX_PATH, currentBackupFilePath.c_str());
 						}
 					}
 
-					FILETIME fileModifiedTimestamp{
+					FILETIME fileModifiedTimestamp {
 						.dwLowDateTime = static_cast<DWORD>(NppXml::uint64Attribute(childNode, "originalFileLastModifTimestamp", 0)),
 						.dwHighDateTime = static_cast<DWORD>(NppXml::uint64Attribute(childNode, "originalFileLastModifTimestampHigh", 0))
 					};
@@ -3191,7 +3224,7 @@ bool NppParameters::getSessionFromXmlTree(const NppXml::Document& pSessionDoc, S
 
 					sessionFileInfo sfi(wstrFileName.c_str(), wstrLangName.c_str(), encoding,
 						isUserReadOnly, isPinned, isUntitleTabRenamed,
-						position, pBackupFilePath, fileModifiedTimestamp, mapPosition);
+						position, normalizedBackupFilePath, fileModifiedTimestamp, mapPosition);
 
 					sfi._individualTabColour = NppXml::intAttribute(childNode, "tabColourId", -1);
 					sfi._isRTL = getBoolAttribute(childNode, "RTL");
@@ -3877,25 +3910,28 @@ std::pair<unsigned char, unsigned char> NppParameters::feedUserLang(const NppXml
 	return std::pair<unsigned char, unsigned char>(static_cast<unsigned char>(iBegin), static_cast<unsigned char>(iEnd));
 }
 
-bool NppParameters::importUDLFromFile(const std::wstring& sourceFile)
+std::pair<unsigned char, unsigned char> NppParameters::importUDLFromFile(const std::wstring& sourceFile)
 {
 	NppXml::Document pXmlUserLangDoc = new NppXml::NewDocument();
 
-	bool loadOkay = NppXml::loadFile(pXmlUserLangDoc, sourceFile.c_str());
+	std::pair<unsigned char, unsigned char> addUdlResult(static_cast<unsigned char>(0), static_cast<unsigned char>(0));
+	
+	const bool loadOkay = NppXml::loadFileUDL(pXmlUserLangDoc, sourceFile.c_str());
 	if (loadOkay)
 	{
-		auto r = addUserDefineLangsFromXmlTree(pXmlUserLangDoc);
-		loadOkay = (r.second - r.first) != 0;
-		if (loadOkay)
+		addUdlResult = addUserDefineLangsFromXmlTree(pXmlUserLangDoc);
+		unsigned char addedUdlNumber = addUdlResult.second - addUdlResult.first;
+
+		if (addedUdlNumber)
 		{
-			_pXmlUserLangsDoc.emplace_back(nullptr, sourceFile, true, true, r);
+			_pXmlUserLangsDoc.emplace_back(nullptr, sourceFile, true, true, addUdlResult);
 
 			// imported UDL from xml file will be added into default udl, so we should make default udl dirty
 			setUdlXmlDirtyFromXmlDoc(_pXmlUserLangDoc._doc);
 		}
 	}
 	delete pXmlUserLangDoc;
-	return loadOkay;
+	return addUdlResult;
 }
 
 bool NppParameters::exportUDLToFile(size_t langIndex2export, const std::wstring& fileName2save)
@@ -3907,10 +3943,11 @@ bool NppParameters::exportUDLToFile(size_t langIndex2export, const std::wstring&
 		return false;
 
 	NppXml::Document pNewXmlUserLangDoc = new NppXml::NewDocument();
+	NppXml::createNewDeclaration(pNewXmlUserLangDoc);
 	NppXml::Element newRoot2export = NppXml::createChildElement(pNewXmlUserLangDoc, "NotepadPlus");
 
 	insertUserLang2Tree(newRoot2export, _userLangArray[langIndex2export].get());
-	const bool result = NppXml::saveFile(pNewXmlUserLangDoc, fileName2save.c_str());
+	const bool result = NppXml::saveFileUDL(pNewXmlUserLangDoc, fileName2save.c_str());
 
 	delete pNewXmlUserLangDoc;
 	return result;
@@ -4124,7 +4161,7 @@ void NppParameters::writeDefaultUDL()
 
 	if (firstCleanDone) // at least one udl is for saving, the udl to be deleted are ignored
 	{
-		static_cast<void>(NppXml::saveFile(_pXmlUserLangDoc._doc, _userDefineLangPath.c_str()));
+		static_cast<void>(NppXml::saveFileUDL(_pXmlUserLangDoc._doc, _userDefineLangPath.c_str()));
 	}
 	else if (deleteAll)
 	{
@@ -4167,7 +4204,7 @@ void NppParameters::writeNonDefaultUDL()
 				{
 					insertUserLang2Tree(root, _userLangArray[i].get());
 				}
-				static_cast<void>(NppXml::saveFile(udl._udlXmlDoc, udl._path.c_str()));
+				static_cast<void>(NppXml::saveFileUDL(udl._udlXmlDoc, udl._path.c_str()));
 			}
 		}
 	}
@@ -4542,7 +4579,22 @@ void NppParameters::writeShortcuts()
 	{
 		insertScintKey(scitillaKeyRoot, _scintillaKeyCommands[_scintillaModifiedKeyIndices[i]]);
 	}
-	static_cast<void>(NppXml::saveFileShortcut(_pXmlShortcutDoc, _shortcutsPath.c_str()));
+
+	bool isSaveShortcutOK = NppXml::saveFileShortcut(_pXmlShortcutDoc, _shortcutsPath.c_str());
+
+	// Recalculate the hash of shortcuts file after saving it successfully, and write it into config.xml, to be used for next time shortcut file integrity check
+	if (isSaveShortcutOK)
+	{
+		// Read back the file content as bytes
+		std::string fileContent = getFileContent(_shortcutsPath.c_str());
+
+		// Compute HMAC
+		std::string machineGUID = getMachineGUID();
+		std::string hmac = computeHMAC(machineGUID, fileContent);
+
+		// Store in config.xml
+		_nppGUI._shortcutsXmlHmacInConfig = hmac;
+	}
 }
 
 
@@ -6337,6 +6389,17 @@ void NppParameters::feedGUIParameters(const NppXml::Element& element)
 			_nppGUI._largeFileRestriction._deactivateWordWrap = getBoolAttribute(childNode, "deactivateWordWrap", _nppGUI._largeFileRestriction._deactivateWordWrap);
 			_nppGUI._largeFileRestriction._suppress2GBWarning = getBoolAttribute(childNode, "suppress2GBWarning");
 		}
+
+
+		else if (std::strcmp(nm, "shortcutsXmlHMAC") == 0)
+		{
+			const char* shortcutsXmlHmacValue = NppXml::attribute(childNode, "value");
+			if (shortcutsXmlHmacValue && shortcutsXmlHmacValue[0])
+			{
+				_nppGUI._shortcutsXmlHmacInConfig = shortcutsXmlHmacValue;
+			}
+		}
+
 		// <GUIConfig name="multiInst" setting="0" clipboardHistory="no" documentList="no" characterPanel="no" folderAsWorkspace="no" projectPanels="no"
 		// documentMap="no" fuctionList="no" pluginPanels="no" />
 		else if (std::strcmp(nm, "multiInst") == 0)
@@ -6417,17 +6480,6 @@ void NppParameters::feedGUIParameters(const NppXml::Element& element)
 			_nppGUI._muteSounds = getBoolAttribute(childNode, "muteSounds");
 			_nppGUI._enableFoldCmdToggable = getBoolAttribute(childNode, "enableFoldCmdToggable");
 			_nppGUI._hideMenuRightShortcuts = getBoolAttribute(childNode, "hideMenuRightShortcuts");
-		}
-		// <GUIConfig name="commandLineInterpreter"></GUIConfig>
-		else if (std::strcmp(nm, "commandLineInterpreter") == 0)
-		{
-			NppXml::Node cmdLineInterpreterNode = NppXml::firstChild(childNode);
-			if (cmdLineInterpreterNode)
-			{
-				const char* cli = NppXml::value(cmdLineInterpreterNode);
-				if (cli && cli[0])
-					_nppGUI._commandLineInterpreter = string2wstring(cli);
-			}
 		}
 		// <GUIConfig name="DarkMode" enable="no" colorTone="0" customColorTop="2105376" customColorMenuHotTrack="4539717" customColorActive="3684408"
 		// customColorMain="2105376" customColorError="176" customColorText="14737632" customColorDarkText="12632256" customColorDisabledText="8421504"
@@ -6702,6 +6754,7 @@ void NppParameters::feedScintillaParam(const NppXml::Element& element)
 
 	_svp._zoom = static_cast<intptr_t>(NppXml::int64Attribute(element, "zoom", _svp._zoom));
 	_svp._zoom2 = static_cast<intptr_t>(NppXml::int64Attribute(element, "zoom2", _svp._zoom2));
+	_svp._zoomSync = getBoolAttribute(element, "zoomSync", _svp._zoomSync);
 
 	// White Space visibility State
 	_svp._whiteSpaceShow = getBoolAttribute(element, "whiteSpaceShow", _svp._whiteSpaceShow, STR_BOOL_SHOWHIDE);
@@ -6993,6 +7046,7 @@ bool NppParameters::writeScintillaParams()
 	NppXml::setAttribute(scintNode, "edgeMultiColumnPos", edgeColumnPosStr);
 	NppXml::setAttribute(scintNode, "zoom", _svp._zoom);
 	NppXml::setAttribute(scintNode, "zoom2", _svp._zoom2);
+	setBoolAttribute(scintNode, "zoomSync", _svp._zoomSync);
 	setBoolAttribute(scintNode, "whiteSpaceShow", _svp._whiteSpaceShow, STR_BOOL_SHOWHIDE);
 	setBoolAttribute(scintNode, "eolShow", _svp._eolShow, STR_BOOL_SHOWHIDE);
 	NppXml::setAttribute(scintNode, "eolMode", _svp._eolMode);
@@ -7572,6 +7626,15 @@ void NppParameters::createXmlTreeFromGUIParams()
 		NppXml::setAttribute(GUIConfigElement, "searchEngineCustom", wstring2string(_nppGUI._searchEngineCustom));
 	}
 
+	{
+		if (!_nppGUI._shortcutsXmlHmacInConfig.empty())
+		{
+			NppXml::Element GUIConfigElement = NppXml::createChildElement(newGUIRoot, "GUIConfig");
+			NppXml::setAttribute(GUIConfigElement, "name", "shortcutsXmlHMAC");
+			NppXml::setAttribute(GUIConfigElement, "value", _nppGUI._shortcutsXmlHmacInConfig);
+		}
+	}
+
 	// <GUIConfig name="MarkAll" matchCase="no" wholeWordOnly="yes" />
 	{
 		NppXml::Element GUIConfigElement = NppXml::createChildElement(newGUIRoot, "GUIConfig");
@@ -7587,14 +7650,6 @@ void NppParameters::createXmlTreeFromGUIParams()
 		setBoolAttribute(GUIConfigElement, "wholeWordOnly", _nppGUI._smartHiliteWordOnly);
 		setBoolAttribute(GUIConfigElement, "useFindSettings", _nppGUI._smartHiliteUseFindSettings);
 		setBoolAttribute(GUIConfigElement, "onAnotherView", _nppGUI._smartHiliteOnAnotherView);
-	}
-
-	// <GUIConfig name="commandLineInterpreter"></GUIConfig>
-	if (_nppGUI._commandLineInterpreter.compare(CMD_INTERPRETER))
-	{
-		NppXml::Element GUIConfigElement = NppXml::createChildElement(newGUIRoot, "GUIConfig");
-		NppXml::setAttribute(GUIConfigElement, "name", "commandLineInterpreter");
-		NppXml::createChildText(GUIConfigElement, wstring2string(_nppGUI._commandLineInterpreter));
 	}
 
 	// <GUIConfig name="DarkMode" enable="no" colorTone="0" customColorTop="2105376" customColorMenuHotTrack="4539717" customColorActive="3684408"
