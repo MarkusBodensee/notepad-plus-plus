@@ -772,13 +772,13 @@ void Notepad_plus::command(int id)
 
 				std::filesystem::path canonicalPath(fullTargetPath.c_str());
 				//canonicalPath = std::filesystem::weakly_canonical(canonicalPath).make_preferred();
-				if (canonicalPath.is_relative())
+				if (canonicalPath.is_absolute())
 					canonicalPath = std::filesystem::absolute(canonicalPath);
 
 				_nativeLangSpeaker.messageBox("NoTranslationPlease",
 						_pPublicInterface->getHSelf(),
 						canonicalPath.c_str(),
-						canonicalPath.is_relative() ? L"true" : L"false",
+						canonicalPath.is_absolute() ? L"true" : L"false",
 						MB_OK | MB_APPLMODAL);
 
 				HRESULT hr = openInExplorerAndSelect(fullTargetPath.c_str());
