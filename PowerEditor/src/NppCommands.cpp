@@ -771,11 +771,14 @@ void Notepad_plus::command(int id)
 				}
 
 				std::filesystem::path canonicalPath(fullTargetPath.c_str());
-				canonicalPath = std::filesystem::weakly_canonical(canonicalPath).make_preferred();
+				//canonicalPath = std::filesystem::weakly_canonical(canonicalPath).make_preferred();
+				if (canonicalPath.is_relative())
+					canonicalPath = std::filesystem::absolute(canonicalPath);
+
 				_nativeLangSpeaker.messageBox("NoTranslationPlease",
 						_pPublicInterface->getHSelf(),
 						canonicalPath.c_str(),
-						L"Open Containing Folder in Explorer",
+						canonicalPath.is_relative() ? L"true" : L"false",
 						MB_OK | MB_APPLMODAL);
 
 				HRESULT hr = openInExplorerAndSelect(fullTargetPath.c_str());
