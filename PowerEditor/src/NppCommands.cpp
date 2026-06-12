@@ -779,7 +779,7 @@ void Notepad_plus::command(int id)
 						canonicalPath.is_absolute() ? L"true" : L"false",
 						MB_OK | MB_APPLMODAL);
 
-				HRESULT hr = openInExplorerAndSelect(fullTargetPath.c_str());
+				HRESULT hr = openInExplorerAndSelect(canonicalPath.c_str());
 				if (hr == HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND))
 				{
 					// Fallback: open parent folder
