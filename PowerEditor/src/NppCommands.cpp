@@ -771,8 +771,7 @@ void Notepad_plus::command(int id)
 				}
 
 				std::filesystem::path canonicalPath(fullTargetPath.c_str());
-				//canonicalPath = std::filesystem::weakly_canonical(canonicalPath).make_preferred();
-				canonicalPath = canonicalPath.make_preferred();
+				canonicalPath = canonicalPath.lexically_normal();
 
 				_nativeLangSpeaker.messageBox("NoTranslationPlease",
 						_pPublicInterface->getHSelf(),
