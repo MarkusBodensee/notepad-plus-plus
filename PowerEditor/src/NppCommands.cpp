@@ -804,8 +804,8 @@ void Notepad_plus::command(int id)
 				wchar_t cmd2Exec[CURRENTWORD_MAXLENGTH] = { '\0' };
 				::SendMessage(hwnd, NPPM_GETNPPFULLFILEPATH, CURRENTWORD_MAXLENGTH, reinterpret_cast<LPARAM>(cmd2Exec));
 
-				fullFilePath = L"\"" + fullFilePath + L"\"";
-				::ShellExecute(hwnd, L"open", cmd2Exec, fullFilePath.c_str(), L".", SW_SHOW);
+				fullTargetPath = L"\"" + fullTargetPath + L"\"";
+				::ShellExecute(hwnd, L"open", cmd2Exec, fullTargetPath.c_str(), L".", SW_SHOW);
 			}
 			break;
 		}
