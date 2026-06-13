@@ -742,34 +742,46 @@ void Notepad_plus::command(int id)
 
 			::SendMessage(hwnd, NPPM_GETFILENAMEATCURSOR, CURRENTWORD_MAXLENGTH, reinterpret_cast<LPARAM>(currentWord.get()));
 
+			std::wstring fullTargetPath;
+			DWORD dwRequiredSize = ::ExpandEnvironmentStringsW(currentWord.get(), nullptr, 0);
+			if (dwRequiredSize > 0)
+			{
+				// Try to expand environment strings, nevertheless currentWord is copied with or without expansion
+				fullTargetPath.resize(dwRequiredSize, L'\0');
+				::ExpandEnvironmentStringsW(currentWord.get(), fullTargetPath.data(), dwRequiredSize);
+				if (!fullTargetPath.empty() && fullTargetPath.back() == L'\0')
+					fullTargetPath.pop_back(); // remove superfluous null-terminator (added by ExpandEnvironmentStringsW)
+			}
+			else
+			{
+				// Fallback: Copy currentWord
+				fullTargetPath = currentWord.get();
+			}
+
+			if (!doesPathExist(fullTargetPath.c_str()))
+			{
+				// Concatenate relative path
+				auto currentDir = std::make_unique<wchar_t[]>(strSize);
+				std::fill_n(currentDir.get(), strSize, L'\0');
+				::SendMessage(hwnd, NPPM_GETCURRENTDIRECTORY, CURRENTWORD_MAXLENGTH, reinterpret_cast<LPARAM>(currentDir.get()));
+
+				fullTargetPath = currentDir.get();
+				fullTargetPath += L"\\";
+				fullTargetPath += currentWord.get();
+			}
+
+			if (!doesPathExist(fullTargetPath.c_str()))
+			{
+				_nativeLangSpeaker.messageBox("PathNotFoundWarning",
+					_pPublicInterface->getHSelf(),
+					L"The path you're trying to open doesn't exist.",
+					L"Open Containing Folder in Explorer",
+					MB_OK | MB_APPLMODAL);
+				return;
+			}
+
 			if (id == IDM_EDIT_OPENSELECTEDFILEFOLDERINEXPLORER)
 			{
-				wstring fullTargetPath;
-				if (doesPathExist(currentWord.get()))
-				{
-					fullTargetPath = currentWord.get();
-				}
-				else
-				{
-					auto currentDir = std::make_unique<wchar_t[]>(strSize);
-					std::fill_n(currentDir.get(), strSize, L'\0');
-					::SendMessage(hwnd, NPPM_GETCURRENTDIRECTORY, CURRENTWORD_MAXLENGTH, reinterpret_cast<LPARAM>(currentDir.get()));
-
-					fullTargetPath = currentDir.get();
-					fullTargetPath += L"\\";
-					fullTargetPath += currentWord.get();
-				}
-
-				if (!doesPathExist(fullTargetPath.c_str()))
-				{
-					_nativeLangSpeaker.messageBox("PathNotFoundWarning",
-						_pPublicInterface->getHSelf(),
-						L"The path you're trying to open doesn't exist.",
-						L"Open Containing Folder in Explorer",
-						MB_OK | MB_APPLMODAL);
-					return;
-				}
-
 				std::filesystem::path canonicalPath(fullTargetPath.c_str());
 				canonicalPath = canonicalPath.lexically_normal();
 
@@ -791,32 +803,6 @@ void Notepad_plus::command(int id)
 			{
 				wchar_t cmd2Exec[CURRENTWORD_MAXLENGTH] = { '\0' };
 				::SendMessage(hwnd, NPPM_GETNPPFULLFILEPATH, CURRENTWORD_MAXLENGTH, reinterpret_cast<LPARAM>(cmd2Exec));
-
-				wstring fullFilePath;
-				if (doesPathExist(currentWord.get()))
-				{
-					fullFilePath = currentWord.get();
-				}
-				else
-				{
-					auto currentDir = std::make_unique<wchar_t[]>(strSize);
-					std::fill_n(currentDir.get(), strSize, L'\0');
-					::SendMessage(hwnd, NPPM_GETCURRENTDIRECTORY, CURRENTWORD_MAXLENGTH, reinterpret_cast<LPARAM>(currentDir.get()));
-
-					fullFilePath = currentDir.get();
-					fullFilePath += L"\\";
-					fullFilePath += currentWord.get();
-				}
-
-				if (!doesFileExist(fullFilePath.c_str()))
-				{
-					_nativeLangSpeaker.messageBox("FilePathNotFoundWarning",
-						_pPublicInterface->getHSelf(),
-						L"The file you're trying to open doesn't exist.",
-						L"Open File",
-						MB_OK | MB_APPLMODAL);
-					return;
-				}
 
 				fullFilePath = L"\"" + fullFilePath + L"\"";
 				::ShellExecute(hwnd, L"open", cmd2Exec, fullFilePath.c_str(), L".", SW_SHOW);
