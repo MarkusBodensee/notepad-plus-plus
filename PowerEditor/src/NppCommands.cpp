@@ -805,6 +805,13 @@ void Notepad_plus::command(int id)
 				::SendMessage(hwnd, NPPM_GETNPPFULLFILEPATH, CURRENTWORD_MAXLENGTH, reinterpret_cast<LPARAM>(cmd2Exec));
 
 				fullTargetPath = L"\"" + fullTargetPath + L"\"";
+
+				_nativeLangSpeaker.messageBox("NoTranslationPlease",
+						_pPublicInterface->getHSelf(),
+						fullTargetPath.c_str(),
+						fullTargetPath.c_str(),
+						MB_OK | MB_APPLMODAL);
+
 				::ShellExecute(hwnd, L"open", cmd2Exec, fullTargetPath.c_str(), L".", SW_SHOW);
 			}
 			break;
